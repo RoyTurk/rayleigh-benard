@@ -1,0 +1,23 @@
+# Ignore images
+*.png
+
+# Ignore numpy data
+*.npz
+
+# Ignore mesh / visualization files
+*.xdmf
+*.h5
+
+# (Optional but highly recommended for CFD)
+*.vtk
+*.vtu
+*.pvtu
+*.dat
+*.out
+
+# Python cache
+__pycache__/
+*.pyc
+
+# MacOS junk
+.DS_Store
