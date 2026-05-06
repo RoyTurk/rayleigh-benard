@@ -1,3 +1,9 @@
+"""
+Time integration solver for Rayleigh-Bénard convection.
+
+Drives the time loop with Picard iteration for the nonlinear
+coupled momentum-energy system, and handles XDMF output and statistics.
+"""
 from dolfinx.fem.petsc import LinearProblem
 from dolfinx.io import XDMFFile
 from dolfinx import fem
@@ -5,8 +11,31 @@ from mpi4py import MPI
 import numpy as np
 import os
 
+
 class Solver:
-    
+    """
+    Time-stepping solver for the Rayleigh-Bénard convection problem.
+
+    Advances the solution using BDF1 (implicit Euler) with a Picard
+    iteration loop to handle nonlinearity. Velocity/pressure and temperature
+    are solved sequentially at each Picard iterate. Writes XDMF output and
+    saves time-series statistics (Nusselt number, Picard convergence) to disk.
+
+    Parameters
+    ----------
+    t0 : float
+        Start time.
+    Tend : float
+        End time.
+    num_steps : int
+        Number of uniform time steps.
+    problem : Problem
+        Configured Problem instance containing mesh, forms, and BCs.
+    max_iter : int
+        Maximum Picard iterations per time step.
+    tol : float
+        Convergence tolerance for Picard iteration (L2 norm of increment).
+    """
     def __init__(self, t0, Tend, num_steps, problem, max_iter=20, tol=1e-6):
         
         self.max_iter = max_iter
@@ -20,6 +49,7 @@ class Solver:
         self.problem = problem
         self.problem.dt.value = self.dt_value
         
+        # Direct LU solvers for momentum and energy subproblems
         self.problem_up = LinearProblem(
             problem.a1,
             problem.L1,
@@ -76,15 +106,16 @@ class Solver:
             
             if self.problem.mesh_comm.rank == 0:
                 print(f"\n--- Time step {step}, t = {t:.5f} ---", flush=True)
-            
+
+            # Initialize Picard iterates and solution from previous time step
             self.problem.up_k.x.array[:] = self.problem.up_n.x.array
             self.problem.T_k.x.array[:] = self.problem.T_n.x.array
-            
             self.problem.up_sol.x.array[:] = self.problem.up_n.x.array
             self.problem.T_sol.x.array[:] = self.problem.T_n.x.array
             
             picard_iters, converged = self._picard_step()
             
+            # Advance solution to next time step
             self.problem.up_n.x.array[:] = self.problem.up_sol.x.array
             self.problem.T_n.x.array[:] = self.problem.T_sol.x.array
             self.problem.up_n.x.scatter_forward()
@@ -121,7 +152,20 @@ class Solver:
             print("Saved statistics to output/statistics.npz", flush=True)
             
     def _picard_step(self):
-        
+        """
+        Run the Picard iteration for the current time step.
+
+        Alternately solves the momentum and energy subproblems until the
+        increment in both fields falls below the tolerance, or the maximum
+        number of iterations is reached.
+
+        Returns
+        -------
+        iters : int
+            Number of Picard iterations performed.
+        converged : bool
+            True if the tolerance was met, False if max_iter was reached.
+        """
         for k in range(self.max_iter):
             self.problem_up.solve()
             self.problem.up_sol.x.scatter_forward()
