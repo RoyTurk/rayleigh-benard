@@ -1,3 +1,10 @@
+"""
+Problem definition for Rayleigh-Bénard convection.
+
+Handles mesh generation, function spaces, boundary conditions,
+variational forms, and initial conditions using FEniCSx/DOLFINx.
+"""
+
 from dolfinx import fem
 from dolfinx.io import gmsh as gmshio
 from petsc4py import PETSc
@@ -15,8 +22,29 @@ from ufl import (TrialFunction,
                 dx,
                 ds)
 
+
 class Problem:
-    
+    """
+    Rayleigh-Bénard convection problem definition.
+
+    Builds the rectangular mesh, mixed function spaces for velocity/pressure
+    and temperature, Dirichlet boundary conditions, and the variational forms
+    for the momentum and energy equations. Uses a Picard linearization for the
+    nonlinear convective term.
+
+    Parameters
+    ----------
+    L : float
+        Domain length.
+    h : float
+        Domain height.
+    num_nodes : int
+        Number of nodes per edge for the structured quadrilateral mesh.
+    Ra : float
+        Rayleigh number.
+    Pr : float
+        Prandtl number.
+    """
     def __init__(self,
                 L=1.0, h=1.0, 
                 num_nodes=51, 
@@ -32,9 +60,9 @@ class Problem:
         self.Ra = Ra
         self.Pr = Pr
 
-        # Geometric dimension
-        gdim = 2
+        gdim = 2    # Geometric dimension
         
+        # Physical tags for mesh regions
         self.fluid_tag = 1
         self.bottom_tag, self.top_tag, self.side_tag = 2, 3, 4
                 
@@ -71,6 +99,7 @@ class Problem:
         
         gmsh.finalize()
         
+        # Taylor-Hood elements
         V_cg2 = element("Lagrange", self.mesh.basix_cell(), 2, shape=(self.mesh.geometry.dim,))
         Q_cg1 = element("Lagrange", self.mesh.basix_cell(), 1)
         W_cg2 = element("Lagrange", self.mesh.basix_cell(), 2)
@@ -78,14 +107,16 @@ class Problem:
         self.Z = fem.functionspace(self.mesh, mixed_element([V_cg2, Q_cg1]))
         self.W = fem.functionspace(self.mesh, W_cg2)
         
-        fdim = self.mesh.topology.dim - 1
+        fdim = self.mesh.topology.dim - 1   # Facet dimension
         
+        # Temperature BCs: T=1 at bottom (hot), T=0 at top (cold)
         bottom_dofs = fem.locate_dofs_topological(self.W, fdim, self.ft.find(self.bottom_tag))
         bcT_bottom = fem.dirichletbc(PETSc.ScalarType(1.0), bottom_dofs, self.W)
         
         top_dofs = fem.locate_dofs_topological(self.W, fdim, self.ft.find(self.top_tag))
         bcT_top = fem.dirichletbc(PETSc.ScalarType(0.0), top_dofs, self.W)
         
+        # No-slip velocity BC on all walls
         V_sub, _ = self.Z.sub(0).collapse()
         u_noslip = fem.Function(V_sub)
         u_noslip.x.array[:] = 0.0
@@ -99,6 +130,7 @@ class Problem:
         wall_dofs = fem.locate_dofs_topological((self.Z.sub(0), V_sub), fdim, wall_facets)
         bcu_walls = fem.dirichletbc(u_noslip, wall_dofs, self.Z.sub(0))
         
+        # Pressure pinned at bottom-left corner
         Q_sub, _ = self.Z.sub(1).collapse()
         p_corner = fem.Function(Q_sub)
         p_corner.x.array[:] = 0.0
@@ -109,6 +141,7 @@ class Problem:
         self.bc_up = [bcu_walls, bcp_corner]
         self.bc_T = [bcT_bottom, bcT_top]
         
+        # Trial and test functions
         up = TrialFunction(self.Z)
         vq = TestFunction(self.Z)
         
@@ -118,6 +151,10 @@ class Problem:
         T = TrialFunction(self.W)
         Theta = TestFunction(self.W)
         
+        # Solution fields: 
+        #   _n = previous time step, 
+        #   _k = Picard iterate, 
+        #   _sol = converged 
         self.up_n = fem.Function(self.Z)
         u_n, _ = split(self.up_n)
 
@@ -135,7 +172,7 @@ class Problem:
         Pr_const = fem.Constant(self.mesh, PETSc.ScalarType(self.Pr))
         self.dt = fem.Constant(self.mesh, PETSc.ScalarType(0.0))
         
-        y = as_vector((0.0, 1.0))
+        y = as_vector((0.0, 1.0))   # Unit vector
 
         # Momentum bilinear form
         a1 = (1 / (Pr_const * self.dt)) * dot(u, v) * dx
@@ -170,7 +207,17 @@ class Problem:
         self.apply_initial_conditions()
         
     def _classify_boundaries(self, surfaces, boundaries):
-        
+        """
+        Classify mesh boundaries into bottom, top, and side walls by center of mass,
+        and assign physical groups for use as boundary tags.
+
+        Parameters
+        ----------
+        surfaces : list
+            Gmsh surface entities.
+        boundaries : list
+            Gmsh boundary curve entities.
+        """
         bottom_edges, top_edges, side_edges = [], [], []
 
         for boundary in boundaries:
@@ -201,7 +248,13 @@ class Problem:
         )
     
     def apply_initial_conditions(self):
-        
+        """
+        Set initial conditions for velocity and temperature.
+
+        Velocity is initialized with a divergence-free polynomial field.
+        Temperature is initialized as a linear profile (hot bottom, cold top)
+        with a small random perturbation to trigger convective instability.
+        """
         def u0(x):
             u0 = np.zeros((2, x.shape[1]))
             u0[0] = - 64 * x[0]**2 * (x[0] - 1)**2 * x[1] * (x[1] - 1) * (2 * x[1] - 1)
