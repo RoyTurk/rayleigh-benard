@@ -47,7 +47,7 @@ class Problem:
     """
     def __init__(self,
                 L=1.0, h=1.0, 
-                num_nodes=51, 
+                num_nodes=51,
                 Ra=1e3, Pr=0.71
                 ):
 
@@ -65,6 +65,9 @@ class Problem:
         # Physical tags for mesh regions
         self.fluid_tag = 1
         self.bottom_tag, self.top_tag, self.side_tag = 2, 3, 4
+        
+        num_nodes_x = num_nodes
+        num_nodes_y = max(int(num_nodes * self.h / self.L), 2)
                 
         gmsh.initialize()
         
@@ -79,7 +82,11 @@ class Problem:
             self._classify_boundaries(surfaces, boundaries)
             
             for curve in gmsh.model.occ.getEntities(1):
-                gmsh.model.mesh.setTransfiniteCurve(curve[1], num_nodes)
+                center = gmsh.model.occ.getCenterOfMass(curve[0], curve[1])
+                if np.isclose(center[1], 0.0) or np.isclose(center[1], self.h):
+                    gmsh.model.mesh.setTransfiniteCurve(curve[1], num_nodes_x)
+                else:
+                    gmsh.model.mesh.setTransfiniteCurve(curve[1], num_nodes_y)
             for surf in gmsh.model.occ.getEntities(2):
                 gmsh.model.mesh.setTransfiniteSurface(surf[1])
             
@@ -90,8 +97,6 @@ class Problem:
             gmsh.model.mesh.generate(2)
             # gmsh.fltk.run()
 
-
-            
         mesh_data = gmshio.model_to_mesh(gmsh.model, self.mesh_comm, self.model_rank, gdim=gdim)
         self.mesh = mesh_data.mesh
         self.ft = mesh_data.facet_tags
@@ -257,8 +262,10 @@ class Problem:
         """
         def u0(x):
             u0 = np.zeros((2, x.shape[1]))
-            u0[0] = - 64 * x[0]**2 * (x[0] - 1)**2 * x[1] * (x[1] - 1) * (2 * x[1] - 1)
-            u0[1] = 64 * x[0] * (x[0] - 1) * (2 * x[0] - 1) * x[1]**2 * (x[1] - 1)**2
+            xi = x[0] / self.L  # normalized x in [0,1]
+            eta = x[1] / self.h  # normalized y in [0,1]
+            u0[0] = -64 * xi**2 * (xi - 1)**2 * eta * (eta - 1) * (2 * eta - 1)
+            u0[1] =  64 * xi * (xi - 1) * (2 * xi - 1) * eta**2 * (eta - 1)**2
             return u0
         
         def T0(x):
