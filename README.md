@@ -10,7 +10,7 @@ The key quantity of interest is the Nusselt number. It represents the ratio of t
 
 ---
 
-## Governing Equations
+### Governing Equations
 
 The problem is described by the incompressible Navier-Stokes equations under the Boussinesq approximation, where density variations are only accounted for in the buoyancy term. 
 
@@ -32,7 +32,7 @@ The two dimensionless parameters are:
 
 ---
 
-## Numerical Method
+### Numerical Method
 
 - Spatial discretization: Finite element method using Taylor-Hood elements (P2/P1) for velocity pressure and P2 for temperature
 - Time discretization: Backward Euler 
@@ -42,13 +42,13 @@ The two dimensionless parameters are:
 
 ---
 
-## Validation
+### Validation
 
 Validated against the benchmark of Sanderse & Trias (2023) for $Ra = 10^3, 10^4, 10^5$ with $Pr=0.71$ on a unit suqare domain.
 
 ---
 
-## Project Structure
+### Project Structure
 
 ```
 src/
@@ -64,7 +64,7 @@ output/
 
 ---
 
-## Dependencies
+### Dependencies
 
 - FEniCSx (DOLFINx)
 - Gmsh
@@ -74,6 +74,6 @@ output/
 
 ---
 
-## References
+### References
 
 - Sanderse, B. & Trias, F.X. (2023). *Energy-consistent discretization of viscous dissipation with application to natural convection flow*. arXiv:2307.10874
